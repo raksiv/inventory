@@ -7,6 +7,7 @@ interface Product {
   description: string;
   url: string; 
   labels: string;
+  rekognition: boolean;
 }
 
 // Create product with post method
@@ -16,7 +17,8 @@ inventoryApi.post("/products", async (ctx) => {
     name: ctx.req.json().name,
     description: ctx.req.json().description,
     url: "",
-    labels: ""
+    labels: "",
+    rekognition: false
   };
 
   // Create the new product
@@ -59,10 +61,12 @@ inventoryApi.get("/products/:id", async (ctx) => {
     const product = await products.doc(id).get()
     product.url = await image.getDownloadUrl()
 
-    if (product.url) { 
+    if (!product.rekognition) { 
       const labels = await recognize(image.name, process.env.BUCKETNAME)
-      console.log(labels)
-      product.labels = labels
+      if (labels) { 
+        product.labels = labels
+        product.rekognition = true
+      }
     }
     return ctx.res.json(product);
   } catch (error) {
@@ -81,11 +85,16 @@ inventoryApi.get("/products", async (ctx) => {
 });
 
 inventoryApi.get('/products/:id/image/upload', async (ctx) => {
-  const id = ctx.req.params['id'];
+  const { id }  = ctx.req.params;
 
   // Return a signed url reference for upload
   const image = imageBucket.file(`images/${id}/photo.png`);
   const photoUrl = await image.getUploadUrl()
+
+  // Invalidate labels, so they are recalculated
+  const product = await products.doc(id).get()
+  product.rekognition = false
+  product.labels = ""
 
   ctx.res.json({
     url: photoUrl,
